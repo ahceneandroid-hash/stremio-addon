@@ -3,7 +3,7 @@ const axios = require("axios");
 const cheerio = require("cheerio");
 
 // URL de ton site web principal
-const MY_COMMUNITY_SITE = "https://www.copyrightfreemoviz.com";
+const MY_COMMUNITY_SITE = "https://fstream.info/";
 // URL de secours au cas où ton site ne répond pas
 const DEFAULT_FALLBACK_URL = "https://publicdomainmovie.net";
 
@@ -16,7 +16,7 @@ async function getTargetUrl() {
         const $ = cheerio.load(data);
         
         // Extrait le lien présent dans l'élément ayant l'id "websiteofthemoment"
-        const dynamicUrl = $("#websiteofthemoment a").attr("href") || $("#websiteofthemoment").text().trim();
+        const dynamicUrl = $("#mainUrl a").attr("href") || $("#mainUrl").text().trim();
         
         if (dynamicUrl && dynamicUrl.startsWith("http")) {
             console.log(`[Addon] Site du mois récupéré : ${dynamicUrl}`);
@@ -32,7 +32,7 @@ async function getTargetUrl() {
 const manifest = {
     id: "com.copyrightfreemoviz.addon",
     version: "1.0.0",
-    name: "CopyrightFreeMoviz - Le Choix du Mois",
+    name: "frenchstream - Le Choix du Mois",
     description: "Découvrez chaque mois une nouvelle sélection de films libres de droit choisis par la communauté !",
     resources: ["catalog", "stream"],
     types: ["movie"],
