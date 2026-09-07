@@ -2,39 +2,31 @@ const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 const axios = require("axios");
 const cheerio = require("cheerio");
 
-// URL de ton site web principal
 const MY_COMMUNITY_SITE = "https://fstream.info/";
-// URL de secours au cas où ton site ne répond pas
 const DEFAULT_FALLBACK_URL = "https://publicdomainmovie.net";
 
-/**
- * Fonction qui va lire ton site web pour trouver le lien du site du mois
- */
 async function getTargetUrl() {
     try {
         const { data } = await axios.get(MY_COMMUNITY_SITE, { timeout: 5000 });
         const $ = cheerio.load(data);
-        
-        // Extrait le lien présent dans l'élément ayant l'id "websiteofthemoment"
         const dynamicUrl = $("#mainUrl a").attr("href") || $("#mainUrl").text().trim();
         
         if (dynamicUrl && dynamicUrl.startsWith("http")) {
-            console.log(`[Addon] Site du mois récupéré : ${dynamicUrl}`);
             return dynamicUrl;
         }
     } catch (error) {
-        console.error("[Addon] Impossible de contacter le site principal. Utilisation du site de secours :", error.message);
+        console.error("[Addon] Erreur site principal, bascule sur fallback :", error.message);
     }
     return DEFAULT_FALLBACK_URL;
 }
 
-// 1. Configuration du Manifest (Description de l'add-on)
+// 1. Manifest : Ajout de "meta" dans les ressources
 const manifest = {
     id: "com.copyrightfreemoviz.addon",
-    version: "1.0.0",
-    name: "frenchstream - Le Choix du Mois",
-    description: "Découvrez chaque mois une nouvelle sélection de films libres de droit choisis par la communauté !",
-    resources: ["catalog", "stream"],
+    version: "1.0.1",
+    name: "CopyrightFreeMoviz - Le Choix du Mois",
+    description: "Découvrez chaque mois une nouvelle sélection de films libres de droit !",
+    resources: ["catalog", "meta", "stream"], // <--- "meta" ajouté ici
     types: ["movie"],
     catalogs: [
         {
@@ -47,7 +39,7 @@ const manifest = {
 
 const builder = new addonBuilder(manifest);
 
-// 2. Traitement du Catalogue (Génération de la liste de films)
+// 2. Gestion du Catalogue
 builder.defineCatalogHandler(async (args) => {
     if (args.type === "movie" && args.id === "cfm_monthly_catalog") {
         try {
@@ -89,7 +81,37 @@ builder.defineCatalogHandler(async (args) => {
     return { metas: [] };
 });
 
-// 3. Traitement de la Lecture (Extraction du lien vidéo)
+// 3. NOUVEAU : Handler de Métadonnées (Affiche la page du film dans Stremio)
+builder.defineMetaHandler(async (args) => {
+    if (args.type === "movie" && args.id.startsWith("cfm:")) {
+        try {
+            const encodedUrl = args.id.replace("cfm:", "");
+            const moviePageUrl = Buffer.from(encodedUrl, "base64").toString("utf-8");
+
+            const { data } = await axios.get(moviePageUrl);
+            const $ = cheerio.load(data);
+
+            const title = $("h1").first().text().trim() || "Film";
+            const description = $("p").first().text().trim() || "Aucune description disponible.";
+            const poster = $("img").first().attr("src");
+
+            return {
+                meta: {
+                    id: args.id,
+                    type: "movie",
+                    name: title,
+                    description: description,
+                    poster: poster ? (poster.startsWith("http") ? poster : new URL(moviePageUrl).origin + poster) : null
+                }
+            };
+        } catch (e) {
+            console.error("Erreur meta :", e.message);
+        }
+    }
+    return { meta: null };
+});
+
+// 4. Gestion des Streams
 builder.defineStreamHandler(async (args) => {
     if (args.type === "movie" && args.id.startsWith("cfm:")) {
         try {
@@ -99,7 +121,10 @@ builder.defineStreamHandler(async (args) => {
             const { data } = await axios.get(moviePageUrl);
             const $ = cheerio.load(data);
 
-            let streamUrl = $("video source").attr("src") || $("video").attr("src") || $("a[href$='.mp4']").attr("href");
+            let streamUrl = $("video source").attr("src") 
+                         || $("video").attr("src") 
+                         || $("a[href$='.mp4']").attr("href")
+                         || $("iframe").attr("src"); // Ajout du support iFrame (ex: Archive.org)
 
             if (streamUrl && !streamUrl.startsWith("http")) {
                 const origin = new URL(moviePageUrl).origin;
@@ -115,12 +140,12 @@ builder.defineStreamHandler(async (args) => {
                 };
             }
         } catch (e) {
-            console.error("Erreur extraction stream :", e.message);
+            console.error("Erreur stream :", e.message);
         }
     }
     return { streams: [] };
 });
 
-// 4. Lancement du serveur sur le port attribué par l'hébergeur (ou 7000 en local)
 const port = process.env.PORT || 7000;
 serveHTTP(builder.getInterface(), { port: port });
+
